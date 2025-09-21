@@ -117,7 +117,7 @@
 
 
 
-// server.js
+// server.js (Corrected)
 const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
@@ -136,6 +136,9 @@ wss.on('connection', ws => {
   const playerId = Math.random().toString(36).substring(2, 10);
   ws.playerId = playerId;
 
+  // NEW: Send the server-assigned ID to the client
+  ws.send(JSON.stringify({ type: 'playerConnected', playerId }));
+
   ws.on('message', message => {
     let data;
     try {
@@ -144,17 +147,17 @@ wss.on('connection', ws => {
       return ws.send(JSON.stringify({ type: 'error', message: 'Invalid JSON' }));
     }
 
-    // --- ADD THIS LOG STATEMENT ---
-    console.log('Received message from client:', data);
-    console.log('Client ID:', ws.playerId);
-    // --- END OF LOG STATEMENT ---
+    // Use the ID from the WebSocket object, which is the server-assigned ID
+    const senderId = ws.playerId;
+
+    console.log(`Received message from client ${senderId}:`, data);
 
     switch (data.type) {
       case 'createGame': {
         const gameId = Math.random().toString(36).substring(2, 7).toUpperCase();
         games[gameId] = { players: [ws], state: 'waiting', calledNumbers: [], turn: ws };
         ws.send(JSON.stringify({ type: 'gameCreated', gameId }));
-        console.log(`Game ${gameId} created by player ${playerId}`);
+        console.log(`Game ${gameId} created by player ${senderId}`);
         break;
       }
       case 'joinGame': {
@@ -173,7 +176,7 @@ wss.on('connection', ws => {
               firstPlayerId: firstPlayer.playerId,
             }));
           });
-          console.log(`Player ${playerId} joined game ${data.gameId}. Game started.`);
+          console.log(`Player ${senderId} joined game ${data.gameId}. Game started.`);
         } else {
           ws.send(JSON.stringify({ type: 'error', message: 'Game not found or is full.' }));
         }
@@ -188,7 +191,7 @@ wss.on('connection', ws => {
           game.turn = opponent;
 
           game.players.forEach(p => p.send(JSON.stringify({ type: 'numberCalled', number: data.number })));
-          console.log(`Player ${playerId} called number ${data.number} in game ${game.gameId}`);
+          console.log(`Player ${senderId} called number ${data.number} in game ${game.gameId}`);
         } else {
           ws.send(JSON.stringify({ type: 'error', message: 'It is not your turn or invalid number.' }));
         }
