@@ -12,7 +12,6 @@ wss.on('connection', ws => {
     ws.id = Math.random().toString(36).substring(2, 9);
     console.log(`Client connected with ID: ${ws.id}`);
 
-    // Send the player their unique ID upon connection
     ws.send(JSON.stringify({ type: 'playerConnected', playerId: ws.id }));
 
     ws.on('message', message => {
@@ -26,12 +25,12 @@ wss.on('connection', ws => {
                     const game = {
                         id: gameId,
                         players: [ws],
-                        turn: null, // Turn is set when the game starts
+                        turn: null,
                         calledNumbers: [],
                         state: 'waiting',
                     };
                     games.set(gameId, game);
-                    ws.gameId = gameId; // Associate the WebSocket with the game ID
+                    ws.gameId = gameId;
 
                     ws.send(JSON.stringify({ type: 'gameCreated', gameId }));
                     console.log(`Game ${gameId} created by player ${ws.id}`);
@@ -54,11 +53,9 @@ wss.on('connection', ws => {
                     ws.gameId = joinGameId;
                     existingGame.state = 'playing';
 
-                    // Determine first player and set the turn
                     const firstPlayer = existingGame.players[0];
                     existingGame.turn = firstPlayer.id;
 
-                    // Broadcast game start to both players
                     const messageToSend = {
                         type: 'gameStarted',
                         gameId: existingGame.id,
@@ -81,7 +78,6 @@ wss.on('connection', ws => {
                         ws.send(JSON.stringify({ type: 'error', message: 'It is not your turn or invalid game state.' }));
                         return;
                     }
-
                     if (gameToUpdate.calledNumbers.includes(number)) {
                         ws.send(JSON.stringify({ type: 'error', message: 'Number has already been called.' }));
                         return;
@@ -89,11 +85,9 @@ wss.on('connection', ws => {
 
                     gameToUpdate.calledNumbers.push(number);
 
-                    // Update the turn to the other player
                     const nextPlayer = gameToUpdate.players.find(p => p.id !== ws.id);
                     gameToUpdate.turn = nextPlayer.id;
 
-                    // Broadcast the called number and the next player's turn to both clients
                     const numberCalledMessage = {
                         type: 'numberCalled',
                         number,
@@ -117,7 +111,6 @@ wss.on('connection', ws => {
 
                     winningGame.state = 'over';
 
-                    // Broadcast the win to all players
                     const winMessage = {
                         type: 'gameOver',
                         message: `Player ${ws.id} wins!`,
@@ -129,7 +122,6 @@ wss.on('connection', ws => {
                         }
                     });
                     break;
-
                 default:
                     ws.send(JSON.stringify({ type: 'error', message: 'Unknown message type.' }));
                     break;
