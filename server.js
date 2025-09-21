@@ -1,240 +1,173 @@
-// const express = require('express');
-// const http = require('http');
-// const WebSocket = require('ws');
-
-// const app = express();
-
-// app.get('/', (req, res) => res.send('Bingo backend running ✅'));
-
-// const server = http.createServer(app);
-// const wss = new WebSocket.Server({ server });
-
-// const games = {};
-
-// wss.on('connection', ws => {
-//   console.log('Client connected');
-//   const playerId = Math.random().toString(36).substring(2, 10);
-//   ws.playerId = playerId;
-
-//   ws.on('message', message => {
-//     let data;
-//     try {
-//       data = JSON.parse(message);
-//     } catch (e) {
-//       return ws.send(JSON.stringify({ type: 'error', message: 'Invalid JSON' }));
-//     }
-
-//     switch (data.type) {
-//       case 'createGame': {
-//         const gameId = Math.random().toString(36).substring(2, 7).toUpperCase();
-//         games[gameId] = { players: [ws], state: 'waiting', calledNumbers: [], turn: ws };
-//         ws.send(JSON.stringify({ type: 'gameCreated', gameId }));
-//         console.log(`Game ${gameId} created by player ${playerId}`);
-//         break;
-//       }
-//       case 'joinGame': {
-//         const game = games[data.gameId];
-//         if (game && game.players.length === 1 && game.state === 'waiting') {
-//           game.players.push(ws);
-//           game.state = 'playing';
-
-//           // Randomly decide who goes first
-//           const firstPlayer = game.players[Math.floor(Math.random() * 2)];
-//           game.turn = firstPlayer;
-
-//           game.players.forEach(p => {
-//             p.send(JSON.stringify({
-//               type: 'gameStarted',
-//               gameId: data.gameId,
-//               firstPlayerId: firstPlayer.playerId,
-//             }));
-//           });
-//           console.log(`Player ${playerId} joined game ${data.gameId}. Game started.`);
-//         } else {
-//           ws.send(JSON.stringify({ type: 'error', message: 'Game not found or is full.' }));
-//         }
-//         break;
-//       }
-//       case 'callNumber': {
-//         const game = Object.values(games).find(g => g.players.includes(ws));
-//         if (game && game.state === 'playing' && game.turn === ws && !game.calledNumbers.includes(data.number)) {
-//           game.calledNumbers.push(data.number);
-
-//           // Find the opponent
-//           const opponent = game.players.find(p => p !== ws);
-//           game.turn = opponent;
-
-//           // Broadcast the number to both players
-//           game.players.forEach(p => p.send(JSON.stringify({ type: 'numberCalled', number: data.number })));
-//           console.log(`Player ${playerId} called number ${data.number} in game ${game.gameId}`);
-//         } else {
-//           ws.send(JSON.stringify({ type: 'error', message: 'It is not your turn or invalid number.' }));
-//         }
-//         break;
-//       }
-//       case 'bingo': {
-//         const game = Object.values(games).find(g => g.players.includes(ws));
-//         if (game) {
-//           game.state = 'gameOver';
-//           game.players.forEach(p => {
-//             const message = p === ws ? 'You won!' : 'The other player won!';
-//             p.send(JSON.stringify({ type: 'gameOver', winner: ws.playerId, message }));
-//           });
-//           delete games[Object.keys(games).find(key => games[key] === game)];
-//           console.log(`Game ${Object.keys(games).find(key => games[key] === game)} ended. Winner: ${ws.playerId}`);
-//         }
-//         break;
-//       }
-//       default:
-//         ws.send(JSON.stringify({ type: 'error', message: 'Unknown message type' }));
-//     }
-//   });
-
-//   ws.on('close', () => {
-//     console.log(`Client ${playerId} disconnected`);
-//     for (const gameId in games) {
-//       if (games[gameId].players.includes(ws)) {
-//         games[gameId].players = games[gameId].players.filter(p => p !== ws);
-//         if (games[gameId].players.length === 0) {
-//           delete games[gameId];
-//           console.log(`Game ${gameId} cleaned up due to disconnection`);
-//         } else {
-//           const opponent = games[gameId].players[0];
-//           if (opponent.readyState === WebSocket.OPEN) {
-//             opponent.send(JSON.stringify({ type: 'gameOver', message: 'Opponent disconnected.' }));
-//           }
-//           delete games[gameId];
-//           console.log(`Game ${gameId} ended due to disconnection`);
-//         }
-//       }
-//     }
-//   });
-// });
-
-// const PORT = process.env.PORT || 8080;
-// server.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
-
-
-
-
-// server.js (Corrected)
-const express = require('express');
-const http = require('http');
 const WebSocket = require('ws');
+const http = require('http');
+const express = require('express');
 
 const app = express();
-
-app.get('/', (req, res) => res.send('Bingo backend running ✅'));
-
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-const games = {};
+const games = new Map();
+let gameIdCounter = 0;
 
 wss.on('connection', ws => {
-  console.log('Client connected');
-  const playerId = Math.random().toString(36).substring(2, 10);
-  ws.playerId = playerId;
+    ws.id = Math.random().toString(36).substring(2, 9);
+    console.log(`Client connected with ID: ${ws.id}`);
 
-  // NEW: Send the server-assigned ID to the client
-  ws.send(JSON.stringify({ type: 'playerConnected', playerId }));
+    // Send the player their unique ID upon connection
+    ws.send(JSON.stringify({ type: 'playerConnected', playerId: ws.id }));
 
-  ws.on('message', message => {
-    let data;
-    try {
-      data = JSON.parse(message);
-    } catch (e) {
-      return ws.send(JSON.stringify({ type: 'error', message: 'Invalid JSON' }));
-    }
+    ws.on('message', message => {
+        const data = JSON.parse(message);
+        console.log(`Received message from client ${ws.id}:`, data);
 
-    // Use the ID from the WebSocket object, which is the server-assigned ID
-    const senderId = ws.playerId;
+        switch (data.type) {
+            case 'createGame':
+                const gameId = generateGameId();
+                const game = {
+                    id: gameId,
+                    players: [ws],
+                    turn: ws.id,
+                    calledNumbers: [],
+                    state: 'waiting',
+                };
+                games.set(gameId, game);
+                ws.gameId = gameId; // Associate the WebSocket with the game ID
 
-    console.log(`Received message from client ${senderId}:`, data);
+                ws.send(JSON.stringify({ type: 'gameCreated', gameId }));
+                console.log(`Game ${gameId} created by player ${ws.id}`);
+                break;
 
-    switch (data.type) {
-      case 'createGame': {
-        const gameId = Math.random().toString(36).substring(2, 7).toUpperCase();
-        games[gameId] = { players: [ws], state: 'waiting', calledNumbers: [], turn: ws };
-        ws.send(JSON.stringify({ type: 'gameCreated', gameId }));
-        console.log(`Game ${gameId} created by player ${senderId}`);
-        break;
-      }
-      case 'joinGame': {
-        const game = games[data.gameId];
-        if (game && game.players.length === 1 && game.state === 'waiting') {
-          game.players.push(ws);
-          game.state = 'playing';
+            case 'joinGame':
+                const { gameId: joinGameId } = data;
+                const existingGame = games.get(joinGameId);
 
-          const firstPlayer = game.players[Math.floor(Math.random() * 2)];
-          game.turn = firstPlayer;
+                if (!existingGame) {
+                    ws.send(JSON.stringify({ type: 'error', message: 'Game not found.' }));
+                    return;
+                }
 
-          game.players.forEach(p => {
-            p.send(JSON.stringify({
-              type: 'gameStarted',
-              gameId: data.gameId,
-              firstPlayerId: firstPlayer.playerId,
-            }));
-          });
-          console.log(`Player ${senderId} joined game ${data.gameId}. Game started.`);
-        } else {
-          ws.send(JSON.stringify({ type: 'error', message: 'Game not found or is full.' }));
+                if (existingGame.players.length >= 2) {
+                    ws.send(JSON.stringify({ type: 'error', message: 'Game is full.' }));
+                    return;
+                }
+
+                existingGame.players.push(ws);
+                ws.gameId = joinGameId;
+                existingGame.state = 'playing';
+
+                // Broadcast game start to all players in the game
+                const firstPlayer = existingGame.players[0];
+                const messageToSend = {
+                    type: 'gameStarted',
+                    gameId: existingGame.id,
+                    firstPlayerId: firstPlayer.id,
+                };
+                existingGame.players.forEach(player => {
+                    player.send(JSON.stringify(messageToSend));
+                });
+
+                console.log(`Player ${ws.id} joined game ${joinGameId}. Game started.`);
+                break;
+
+            case 'callNumber':
+                const { gameId: callGameId, number } = data;
+                const gameToUpdate = games.get(callGameId);
+
+                if (!gameToUpdate || gameToUpdate.state !== 'playing') {
+                    ws.send(JSON.stringify({ type: 'error', message: 'Invalid game state.' }));
+                    return;
+                }
+
+                if (gameToUpdate.turn !== ws.id) {
+                    ws.send(JSON.stringify({ type: 'error', message: 'It is not your turn.' }));
+                    return;
+                }
+
+                if (gameToUpdate.calledNumbers.includes(number)) {
+                    ws.send(JSON.stringify({ type: 'error', message: 'Number has already been called.' }));
+                    return;
+                }
+
+                gameToUpdate.calledNumbers.push(number);
+
+                // Update the turn to the other player
+                const nextPlayer = gameToUpdate.players.find(p => p.id !== ws.id);
+                gameToUpdate.turn = nextPlayer.id;
+
+                // Broadcast the number to both players
+                const numberCalledMessage = {
+                    type: 'numberCalled',
+                    number,
+                    nextPlayerId: nextPlayer.id,
+                };
+                gameToUpdate.players.forEach(player => {
+                    player.send(JSON.stringify(numberCalledMessage));
+                });
+                break;
+
+            case 'bingo':
+                const { gameId: bingoGameId } = data;
+                const winningGame = games.get(bingoGameId);
+
+                if (!winningGame) {
+                    ws.send(JSON.stringify({ type: 'error', message: 'Game not found.' }));
+                    return;
+                }
+
+                winningGame.state = 'over';
+
+                // Broadcast the win to all players
+                const winMessage = {
+                    type: 'gameOver',
+                    message: `Player ${ws.id} wins!`,
+                    winnerId: ws.id,
+                };
+                winningGame.players.forEach(player => {
+                    player.send(JSON.stringify(winMessage));
+                });
+                break;
+
+            default:
+                ws.send(JSON.stringify({ type: 'error', message: 'Unknown message type.' }));
+                break;
         }
-        break;
-      }
-      case 'callNumber': {
-        const game = Object.values(games).find(g => g.players.includes(ws));
-        if (game && game.state === 'playing' && game.turn === ws && !game.calledNumbers.includes(data.number)) {
-          game.calledNumbers.push(data.number);
+    });
 
-          const opponent = game.players.find(p => p !== ws);
-          game.turn = opponent;
+    ws.on('close', () => {
+        console.log(`Client ${ws.id} disconnected`);
+        if (ws.gameId) {
+            const game = games.get(ws.gameId);
+            if (game) {
+                game.players = game.players.filter(player => player.id !== ws.id);
 
-          game.players.forEach(p => p.send(JSON.stringify({ type: 'numberCalled', number: data.number })));
-          console.log(`Player ${senderId} called number ${data.number} in game ${game.gameId}`);
-        } else {
-          ws.send(JSON.stringify({ type: 'error', message: 'It is not your turn or invalid number.' }));
+                if (game.players.length === 1) {
+                    // Notify the remaining player that the other one left
+                    const remainingPlayer = game.players[0];
+                    if (remainingPlayer.readyState === WebSocket.OPEN) {
+                        remainingPlayer.send(JSON.stringify({
+                            type: 'playerDisconnected',
+                            message: 'Your opponent has disconnected. Game Over.'
+                        }));
+                    }
+                    games.delete(game.id);
+                    console.log(`Game ${game.id} ended due to disconnection`);
+                } else if (game.players.length === 0) {
+                    games.delete(game.id);
+                }
+            }
         }
-        break;
-      }
-      case 'bingo': {
-        const game = Object.values(games).find(g => g.players.includes(ws));
-        if (game) {
-          game.state = 'gameOver';
-          game.players.forEach(p => {
-            const message = p === ws ? 'You won!' : 'The other player won!';
-            p.send(JSON.stringify({ type: 'gameOver', winner: ws.playerId, message }));
-          });
-          delete games[Object.keys(games).find(key => games[key] === game)];
-          console.log(`Game ${Object.keys(games).find(key => games[key] === game)} ended. Winner: ${ws.playerId}`);
-        }
-        break;
-      }
-      default:
-        ws.send(JSON.stringify({ type: 'error', message: 'Unknown message type' }));
-    }
-  });
-
-  ws.on('close', () => {
-    console.log(`Client ${playerId} disconnected`);
-    for (const gameId in games) {
-      if (games[gameId].players.includes(ws)) {
-        games[gameId].players = games[gameId].players.filter(p => p !== ws);
-        if (games[gameId].players.length === 0) {
-          delete games[gameId];
-          console.log(`Game ${gameId} cleaned up due to disconnection`);
-        } else {
-          const opponent = games[gameId].players[0];
-          if (opponent.readyState === WebSocket.OPEN) {
-            opponent.send(JSON.stringify({ type: 'gameOver', message: 'Opponent disconnected.' }));
-          }
-          delete games[gameId];
-          console.log(`Game ${gameId} ended due to disconnection`);
-        }
-      }
-    }
-  });
+    });
 });
 
+const generateGameId = () => {
+    let id = Math.random().toString(36).substring(2, 7).toUpperCase();
+    while (games.has(id)) {
+        id = Math.random().toString(36).substring(2, 7).toUpperCase();
+    }
+    return id;
+};
+
 const PORT = process.env.PORT || 8080;
-server.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
+server.listen(PORT, () => {
+    console.log(`Server is listening on port ${PORT}`);
+});
