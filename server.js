@@ -78,6 +78,7 @@ wss.on('connection', ws => {
                         ws.send(JSON.stringify({ type: 'error', message: 'It is not your turn or invalid game state.' }));
                         return;
                     }
+
                     if (gameToUpdate.calledNumbers.includes(number)) {
                         ws.send(JSON.stringify({ type: 'error', message: 'Number has already been called.' }));
                         return;
@@ -92,6 +93,7 @@ wss.on('connection', ws => {
                         type: 'numberCalled',
                         number,
                         nextPlayerId: nextPlayer.id,
+                        calledNumbers: gameToUpdate.calledNumbers,
                     };
                     gameToUpdate.players.forEach(player => {
                         if (player.readyState === WebSocket.OPEN) {
